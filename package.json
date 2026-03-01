@@ -1,0 +1,25 @@
+{
+  "name": "bot-audit",
+  "version": "1.0.0",
+  "main": "App.js",
+  "scripts": {
+    "start": "node App.js",
+    "dev": "node App.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "automation",
+    "audit",
+    "outreach"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "Production-grade Bot-Audit pipeline: CSV lead ingestion, Playwright deep-audit, Nodemailer personalised outreach.",
+  "dependencies": {
+    "csv-parser": "^3.2.0",
+    "csv-writer": "^1.6.0",
+    "dotenv": "^17.3.1",
+    "nodemailer": "^8.0.1",
+    "playwright": "^1.58.2"
+  }
+}
