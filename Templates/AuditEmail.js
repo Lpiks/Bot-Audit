@@ -260,7 +260,7 @@ function renderHero(businessName, score, badges) {
   </tr>`;
 }
 
-function renderSpeedComparison(businessName, loadTimeSec, speedBarWidth) {
+function renderSpeedComparison(businessName, loadTimeSec, speedBarWidth, targetLoadStr) {
   return `<!-- ═══ SPEED COMPARISON ═══ -->
   <tr>
     <td style="background-color:#ffffff;padding:0 40px 40px 40px">
@@ -303,7 +303,7 @@ function renderSpeedComparison(businessName, loadTimeSec, speedBarWidth) {
                 <tbody>
                   <tr>
                     <td align="left"><span style="font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:2px;color:#2f855a">Optimized (Target)</span></td>
-                    <td align="right"><span style="font-size:22px;font-weight:900;color:#c9a84c">1.00s</span></td>
+                    <td align="right"><span style="font-size:22px;font-weight:900;color:#c9a84c">${targetLoadStr}</span></td>
                   </tr>
                   <tr><td colspan="2" style="padding:16px 0">
                     <table width="100%" cellpadding="0" cellspacing="0">
@@ -513,6 +513,15 @@ function buildHtmlEmail({ businessName, website, report, senderName }) {
   const delaySec = Math.max(0.5, report.Loadtime ? (report.Loadtime - 500) / 1000 : 1);
   const speedBarWidth = report.Loadtime ? Math.min(95, Math.round((report.Loadtime / 5000) * 100)) + "%" : "50%";
 
+  const currentLoadSecs = report.Loadtime ? report.Loadtime / 1000 : 3.5;
+  let targetLoadSecs = 1.00;
+  // If their load time is under 1.20s, push target down so we still pitch an improvement.
+  // Minimum 0.40s. (e.g. 0.99s becomes 0.69s)
+  if (currentLoadSecs <= 1.20) {
+    targetLoadSecs = Math.max(0.40, currentLoadSecs - 0.30);
+  }
+  const targetLoadStr = targetLoadSecs.toFixed(2) + "s";
+
   return `<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "https://www.w3.org/TR/html4/strict.dtd">
 <html lang="en">
 <head>
@@ -529,7 +538,7 @@ function buildHtmlEmail({ businessName, website, report, senderName }) {
         <tbody>
           ${renderHeader(year)}
           ${renderHero(businessName, score, badges)}
-          ${renderSpeedComparison(businessName, loadTimeSec, speedBarWidth)}
+          ${renderSpeedComparison(businessName, loadTimeSec, speedBarWidth, targetLoadStr)}
           ${renderCostOfInaction(delaySec, lossPct, annualLoss)}
           ${renderRadarRoadmap(chartUrl)}
           ${renderGuarantee(guarantee, callSubject)}
