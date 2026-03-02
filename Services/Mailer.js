@@ -8,8 +8,9 @@
 
 'use strict';
 
-const nodemailer = require('nodemailer');
-const fs = require('fs');
+const nodemailer  = require('nodemailer');
+const { ImapFlow } = require('imapflow');
+const fs   = require('fs');
 const path = require('path');
 const { generateSubject, buildHtmlEmail } = require('../Templates/AuditEmail');
 
@@ -30,6 +31,50 @@ function createTransporter() {
 }
 
 // ---------------------------------------------------------------------------
+// IMAP — append message to Sent folder
+// ---------------------------------------------------------------------------
+
+async function appendToSent(rawMessage) {
+  const client = new ImapFlow({
+    host:    process.env.SMTP_HOST,
+    port:    993,
+    secure:  true,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    logger: false,          // silence verbose IMAP logs
+  });
+
+  try {
+    await client.connect();
+
+    // Try common Sent folder names used by cPanel / Spacemail
+    const candidates = ['Sent', 'INBOX.Sent', 'Sent Items', 'Sent Messages'];
+    let appended = false;
+
+    for (const folder of candidates) {
+      try {
+        await client.append(folder, rawMessage, ['\\Seen']);
+        console.log(`  📂  Copied to "${folder}" folder on server`);
+        appended = true;
+        break;
+      } catch {
+        // folder doesn't exist — try next
+      }
+    }
+
+    if (!appended) {
+      console.warn('  ⚠️   Could not find Sent folder — message not copied to server');
+    }
+  } catch (err) {
+    console.warn(`  ⚠️   IMAP append failed: ${err.message}`);
+  } finally {
+    await client.logout().catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Send
 // ---------------------------------------------------------------------------
 
@@ -42,13 +87,14 @@ async function sendAuditEmail({ to, businessName, website, auditReport }) {
   const senderEmail = process.env.SENDER_EMAIL || 'audit@steppingstones.agency';
 
   const subject  = generateSubject(businessName, auditReport);
-  
+
   // Check if logo exists in Data folder for attachment
   const logoPath = path.join(__dirname, '..', 'Data', 'logo.png');
-  const hasLogo = fs.existsSync(logoPath);
-  
+  const hasLogo  = fs.existsSync(logoPath);
+
   const htmlBody = buildHtmlEmail({ businessName, website, report: auditReport, senderName, hasLogo });
 
+  // Use a builder transport to capture the raw RFC-2822 message for IMAP
   const transporter = createTransporter();
 
   const mailOptions = {
@@ -62,15 +108,30 @@ async function sendAuditEmail({ to, businessName, website, auditReport }) {
     mailOptions.attachments = [
       {
         filename: 'logo.png',
-        path: logoPath,
-        cid: 'agencyLogo' // Same cid value as in the HTML img src
-      }
+        path:     logoPath,
+        cid:      'agencyLogo',
+      },
     ];
   }
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    // Send via SMTP and capture raw message bytes for IMAP append
+    let rawMessage;
+    const info = await transporter.sendMail({
+      ...mailOptions,
+      // nodemailer exposes the envelope / raw via info — we rebuild it below
+    });
+
     console.log(`  ✉️   Email sent to ${to} [MessageId: ${info.messageId}]`);
+
+    // Build the raw message independently so we can append it to IMAP Sent
+    const builder = nodemailer.createTransport({ streamTransport: true, newline: 'unix' });
+    const built   = await builder.sendMail(mailOptions);
+    rawMessage    = await streamToBuffer(built.message);
+
+    // Copy to Sent folder (non-blocking — failure is just a warning)
+    appendToSent(rawMessage).catch(() => {});
+
     return { success: true, messageId: info.messageId };
   } catch (err) {
     console.error(`  ❌  Failed to send email to ${to}: ${err.message}`);
@@ -79,9 +140,21 @@ async function sendAuditEmail({ to, businessName, website, auditReport }) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: stream → Buffer
+// ---------------------------------------------------------------------------
+
+function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data',  (chunk) => chunks.push(chunk));
+    stream.on('end',   () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = {
-  sendAuditEmail,
-};
+module.exports = { sendAuditEmail };
+

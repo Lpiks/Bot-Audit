@@ -1,481 +1,447 @@
-/**
- * AuditEmail.js
- * Contains the exact Gemini shared HTML template requested by the user.
- */
-
 'use strict';
+
+// ---------------------------------------------------------------------------
+// Subject line
+// ---------------------------------------------------------------------------
 
 function generateSubject(businessName, auditReport) {
   const { Loadtime, Issecure, Mobilehealth } = auditReport;
-
-  if (Loadtime > 3000) {
-    return `⚡ ${businessName} : Your website is leaking high-ticket clients`;
-  }
-  if (!Issecure) {
-    return `🔐 Security Alert — ${businessName} website is exposed`;
-  }
-  if (!Mobilehealth) {
-    return `📱 ${businessName} : Broken mobile experience costing conversions`;
-  }
+  if (Loadtime > 3000) return `⚡ ${businessName} : Your website is leaking high-ticket clients`;
+  if (!Issecure)       return `🔐 Security Alert — ${businessName} website is exposed`;
+  if (!Mobilehealth)   return `📱 ${businessName} : Broken mobile experience costing conversions`;
   return `🔍 Confidential Performance Audit — ${businessName}`;
 }
 
+// ---------------------------------------------------------------------------
+// Radar chart (QuickChart.io — email-safe static image)
+// ---------------------------------------------------------------------------
+
 function generateRadarChartUrl(businessName, report) {
-  const scoreSecurity  = report.Issecure ? 95 : 15;
-  const scoreMobile    = report.Mobilehealth ? 90 : 25;
-  
+  const scoreSecurity = report.Issecure ? 95 : 15;
+  const scoreMobile   = report.Mobilehealth ? 90 : 25;
+
   let scoreSpeed = 15;
-  if (report.Loadtime !== null) {
-    if (report.Loadtime <= 2000) scoreSpeed = 95;
+  if (report.Loadtime != null) {
+    if      (report.Loadtime <= 2000) scoreSpeed = 95;
     else if (report.Loadtime <= 3000) scoreSpeed = 70;
     else if (report.Loadtime <= 5000) scoreSpeed = 40;
   }
 
   let scoreSEO = 15;
   if (report.Seometrics) {
-    scoreSEO = 15 + (report.Seometrics.hasTitle ? 40 : 0) + (report.Seometrics.hasDescription ? 30 : 0);
+    scoreSEO = 15
+      + (report.Seometrics.hasTitle       ? 40 : 0)
+      + (report.Seometrics.hasDescription ? 30 : 0);
   }
 
   let scoreErrors = 15;
-  if (report.Consoleerrors === 0) scoreErrors = 90;
-  else if (report.Consoleerrors <= 3) scoreErrors = 50;
+  if      (report.Consoleerrors === 0) scoreErrors = 90;
+  else if (report.Consoleerrors <= 3)  scoreErrors = 50;
 
-  const chartConfig = {
+  const cfg = {
     type: 'radar',
     data: {
       labels: ['Speed', 'SEO', 'Mobile', 'Code', 'Security'],
       datasets: [
         {
-          label: 'Current (Connect)',
-          backgroundColor: 'rgba(229, 62, 62, 0.15)',
+          label: `Current (${businessName})`,
+          backgroundColor: 'rgba(229,62,62,0.15)',
           borderColor: '#E53E3E',
           pointBackgroundColor: '#E53E3E',
-          data: [scoreSpeed, scoreSEO, scoreMobile, scoreErrors, scoreSecurity]
+          data: [scoreSpeed, scoreSEO, scoreMobile, scoreErrors, scoreSecurity],
         },
         {
           label: 'Target Standard',
-          backgroundColor: 'rgba(201, 168, 76, 0.1)',
+          backgroundColor: 'rgba(201,168,76,0.1)',
           borderColor: '#C9A84C',
           pointBackgroundColor: '#C9A84C',
           borderDash: [5, 5],
-          data: [100, 100, 100, 100, 100]
-        }
-      ]
+          data: [100, 100, 100, 100, 100],
+        },
+      ],
     },
     options: {
       scale: {
         ticks: { min: 0, max: 100, display: false },
-        pointLabels: { fontSize: 13, fontStyle: 'bold', fontColor: '#555' }
+        pointLabels: { fontSize: 13, fontStyle: 'bold', fontColor: '#555' },
       },
-      legend: { position: 'bottom', labels: { fontSize: 12, fontColor: '#333' } }
-    }
+      legend: { position: 'bottom', labels: { fontSize: 12, fontColor: '#333' } },
+    },
   };
 
-  const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
-  return `https://quickchart.io/chart?w=600&h=400&c=${encodedConfig}`;
+  return `https://quickchart.io/chart?w=500&h=350&c=${encodeURIComponent(JSON.stringify(cfg))}`;
 }
 
-function calculateFinancialImpact(loadTimeMs) {
-  if (!loadTimeMs) return '$ 0';
-  const delaySec = Math.max(0, (loadTimeMs - 1500) / 1000);
-  if (delaySec === 0) return '$ 0';
-  const monthlyLoss = 75000 * (delaySec * 0.07);
-  const annualLoss = Math.round(monthlyLoss * 12);
-  return `$ ` + annualLoss.toLocaleString('en-US');
+// ---------------------------------------------------------------------------
+// Financial helpers
+// ---------------------------------------------------------------------------
+
+function calcAnnualLoss(loadTimeMs) {
+  // Use 500ms as baseline (industry optimal). Min 0.5s delay factor so all sites show meaningful numbers.
+  const delaySec = loadTimeMs ? Math.max(0.5, (loadTimeMs - 500) / 1000) : 1;
+  const annual = Math.round(75000 * delaySec * 0.07 * 12);
+  return '$ ' + annual.toLocaleString('en-US');
 }
 
-function calculateLossPercent(loadTimeMs) {
-  if (!loadTimeMs) return '0%';
-  const delaySec = Math.max(0, (loadTimeMs - 1500) / 1000);
-  if (delaySec === 0) return '0%';
-  const pct = delaySec * 7;
-  return `-${pct.toFixed(1)}% Leak`;
+function calcLossPct(loadTimeMs) {
+  const delaySec = loadTimeMs ? Math.max(0.5, (loadTimeMs - 500) / 1000) : 1;
+  return `-${(delaySec * 7).toFixed(1)}% Conversion Leak`;
 }
 
-function buildHtmlEmail({ businessName, website, report, senderName, hasLogo }) {
-  const chartUrl   = generateRadarChartUrl(businessName, report);
-  const loadTimeSec = report.Loadtime ? (report.Loadtime / 1000).toFixed(2) + 's' : '4.21s';
-  const financialLoss = calculateFinancialImpact(report.Loadtime || 4210);
-  const lossPercent = calculateLossPercent(report.Loadtime || 4210);
-  
-  let badges = "";
-  if (report.Loadtime > 3000) {
-    badges += `<div class="px-4 py-2 bg-error/5 text-error rounded font-bold text-[10px] uppercase tracking-widest border border-error/10">⚡ Critical Latency</div>`;
-  }
-  if (!report.Issecure) {
-    badges += `<div class="px-4 py-2 bg-error/5 text-error rounded font-bold text-[10px] uppercase tracking-widest border border-error/10">🔓 Security Risk</div>`;
-  }
-  if (!report.Mobilehealth) {
-    badges += `<div class="px-4 py-2 bg-error/5 text-error rounded font-bold text-[10px] uppercase tracking-widest border border-error/10">📱 Mobile Issues</div>`;
-  }
-  if (report.Consoleerrors > 0) {
-    badges += `<div class="px-4 py-2 bg-error/5 text-error rounded font-bold text-[10px] uppercase tracking-widest border border-error/10">❌ Script Errors (${report.Consoleerrors})</div>`;
-  }
-  if(badges === "") {
-    badges = `<div class="px-4 py-2 bg-success/5 text-success rounded font-bold text-[10px] uppercase tracking-widest border border-success/10">✅ Excellent Health</div>`;
-  }
+// ---------------------------------------------------------------------------
+// Badge helpers
+// ---------------------------------------------------------------------------
 
-  // Removed Gemini injected scripts (Firebase, Audio recording interceptors, etc.)
-  return `<!DOCTYPE html>
+function buildBadges(report) {
+  const badges = [];
+  if (report.Loadtime > 3000)    badges.push('⚡ Critical Load Time');
+  if (!report.Issecure)          badges.push('🔓 Security Risk');
+  if (!report.Mobilehealth)      badges.push('📱 Mobile Issues');
+  if (report.Consoleerrors > 0)  badges.push(`❌ JS Script Errors (${report.Consoleerrors})`);
+  if (badges.length === 0)       badges.push('✅ Excellent Health');
+
+  return badges.map(b => `
+    <span style="display:inline-block;padding:8px 16px;background-color:rgba(229,62,62,0.05);color:#e53e3e;border:1px solid rgba(229,62,62,0.1);border-radius:4px;font-size:10px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;margin-right:8px;margin-bottom:8px">${b}</span>
+  `).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Main HTML builder — pure table-based, fully inline-styled for Gmail
+// ---------------------------------------------------------------------------
+
+function buildHtmlEmail({ businessName, website, report, senderName }) {
+  const chartUrl    = generateRadarChartUrl(businessName, report);
+  const loadTimeSec = report.Loadtime ? (report.Loadtime / 1000).toFixed(2) + 's' : 'N/A';
+  const annualLoss  = calcAnnualLoss(report.Loadtime || 0);
+  const lossPct     = calcLossPct(report.Loadtime || 0);
+  const score       = report.Auditscore ?? 0;
+  const badges      = buildBadges(report);
+  const year        = new Date().getFullYear();
+  const callSubject = encodeURIComponent(`Re: ${businessName} Audit - Performance Guarantee Booking & Audit Details`);
+
+  // Delay factor baked into slider JS — 500ms baseline, minimum 0.5s so every site shows meaningful loss
+  const delaySec = Math.max(0.5, report.Loadtime ? (report.Loadtime - 500) / 1000 : 1);
+
+  // Speed bar width: cap at 95% for display
+  const speedBarWidth = report.Loadtime
+    ? Math.min(95, Math.round((report.Loadtime / 5000) * 100)) + '%'
+    : '50%';
+
+  return `<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "https://www.w3.org/TR/html4/strict.dtd">
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Strategic Audit | Stepping Stones Agency</title>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&amp;family=Cinzel:wght@700&amp;display=swap" rel="stylesheet">
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        heading: ['Cinzel', 'serif'],
-                    },
-                    colors: {
-                        gold: {
-                            50: '#fdfbf7',
-                            100: '#f9f4e6',
-                            500: '#C9A84C',
-                            600: '#B08D3D',
-                        },
-                        onyx: '#0D0D0D',
-                        success: '#2F855A',
-                        error: '#E53E3E'
-                    }
-                }
-            }
-        }
-    </script>
-
-    <style>
-        body {
-            background-color: #fdfbf7;
-            scroll-behavior: smooth;
-        }
-
-        .chart-container {
-            position: relative;
-            width: 100%;
-            max-width: 550px;
-            margin-left: auto;
-            margin-right: auto;
-            height: 350px;
-            max-height: 400px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        /* --- CSS LOGO RECONSTRUCTION --- */
-        .ss-logo {
-            width: 60px;
-            height: 60px;
-            background: #000;
-            border-radius: 50%;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid #333;
-            overflow: hidden;
-        }
-        
-        .ss-logo::before {
-            content: '';
-            position: absolute;
-            width: 85%;
-            height: 85%;
-            border: 1px solid #888;
-            border-radius: 50%;
-            border-top-color: transparent;
-            border-bottom-color: transparent;
-            transform: rotate(-45deg);
-        }
-
-        .ss-inner-blocks {
-            position: relative;
-            width: 40px;
-            height: 40px;
-            transform: rotate(-45deg);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 2px;
-        }
-
-        .ss-block {
-            width: 12px;
-            height: 4px;
-            background: #bbb;
-            box-shadow: 2px 2px 0 #555;
-        }
-
-        .ss-node {
-            position: absolute;
-            width: 3px;
-            height: 3px;
-            background: #bbb;
-            border-radius: 50%;
-        }
-        .n1 { top: 15%; left: 20%; }
-        .n2 { bottom: 15%; right: 20%; }
-        .n3 { top: 50%; right: 10%; }
-
-        /* Speed Simulation */
-        @keyframes loading-slow {
-            0% { width: 0%; opacity: 1; }
-            80% { width: 30%; opacity: 1; }
-            100% { width: 35%; opacity: 1; }
-        }
-        @keyframes loading-fast {
-            0% { width: 0%; }
-            100% { width: 100%; }
-        }
-        .bar-slow { animation: loading-slow 4.2s infinite linear; }
-        .bar-fast { animation: loading-fast 1.2s infinite ease-out; }
-
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            height: 20px;
-            width: 20px;
-            border-radius: 50%;
-            background: #C9A84C;
-            cursor: pointer;
-        }
-        
-        .pulse { animation: pulse-ring 2s infinite; }
-        @keyframes pulse-ring {
-            0% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0.4); }
-            70% { box-shadow: 0 0 0 15px rgba(201, 168, 76, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0); }
-        }
-    </style>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confidential Performance Audit — ${businessName}</title>
 </head>
-<body class="font-sans antialiased text-onyx">
+<body style="margin:0;padding:0;background-color:#fdfbf7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0d0d0d">
 
-    <!-- Navigation -->
-    <nav class="bg-onyx py-4 px-8 sticky top-0 z-50 flex justify-between items-center shadow-2xl">
-        <div class="flex items-center gap-4">
-            <div class="ss-logo">
-                <div class="ss-inner-blocks">
-                    <div class="ss-block"></div>
-                    <div class="ss-block" style="margin-left: 6px;"></div>
-                    <div class="ss-block" style="margin-left: 12px;"></div>
-                    <div class="ss-block" style="margin-left: 18px;"></div>
-                </div>
-                <div class="ss-node n1"></div>
-                <div class="ss-node n2"></div>
-                <div class="ss-node n3"></div>
-            </div>
-            <div class="hidden sm:block">
-                <span class="text-white text-[10px] uppercase tracking-[0.4em] font-bold block">Stepping Stones</span>
-                <span class="text-gold-500 text-[8px] uppercase tracking-[0.2em] font-medium tracking-widest">Performance Agency</span>
-            </div>
-        </div>
-        <div class="flex items-center gap-6">
-            <div class="hidden md:flex gap-8">
-                <a href="#audit" class="text-white/60 hover:text-gold-500 text-[10px] uppercase font-bold tracking-widest transition-colors">Audit</a>
-                <a href="#impact" class="text-white/60 hover:text-gold-500 text-[10px] uppercase font-bold tracking-widest transition-colors">Impact</a>
-                <a href="#guarantee" class="text-white/60 hover:text-gold-500 text-[10px] uppercase font-bold tracking-widest transition-colors">Guarantee</a>
-            </div>
-            <a href="mailto:steppingstonesdev.contact@gmail.com" class="bg-gold-500 text-onyx px-5 py-2 text-[10px] font-black uppercase rounded shadow-lg hover:bg-gold-600 transition-all">Free Strategy Call</a>
-        </div>
-    </nav>
+  <!-- WRAPPER -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fdfbf7">
+    <tbody><tr><td align="center" style="padding:32px 16px">
 
-    <main class="max-w-6xl mx-auto px-6 py-12 space-y-24">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:800px">
+        <tbody>
 
-        <!-- SECTION: Hero Diagnosis -->
-        <section id="audit" class="text-center space-y-12">
-            <div class="space-y-4">
-                <h1 class="font-heading text-4xl md:text-6xl text-onyx tracking-tighter uppercase leading-tight">Your Site Speed is Killing Your Deals.</h1>
-                <p class="text-gray-500 uppercase tracking-[0.3em] text-[10px] font-bold">Analysis Prepared for: <span class="text-gold-600">${businessName}</span></p>
-            </div>
+          <!-- ═══ HEADER ═══ -->
+          <tr>
+            <td style="background-color:#0d0d0d;padding:20px 32px;border-radius:16px 16px 0 0">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tbody><tr>
+                  <td align="left" style="vertical-align:middle">
+                    <table cellpadding="0" cellspacing="0">
+                      <tbody><tr>
+                        <td style="padding-right:12px">
+                          <div style="width:32px;height:32px;border:1px solid #c9a84c;display:inline-block;vertical-align:middle;text-align:center;line-height:32px;color:#c9a84c;font-family:serif;font-size:18px">S</div>
+                        </td>
+                        <td style="color:#ffffff;font-size:10px;font-weight:bold;letter-spacing:4px;text-transform:uppercase">Stepping Stones Agency</td>
+                      </tr></tbody>
+                    </table>
+                  </td>
+                  <td align="right">
+                    <span style="color:#c9a84c;font-size:9px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:4px 12px;border:1px solid rgba(201,168,76,0.2);border-radius:20px">CONFIDENTIAL AUDIT #LUXU-${year}</span>
+                  </td>
+                </tr></tbody>
+              </table>
+            </td>
+          </tr>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center bg-white p-10 rounded-[32px] shadow-2xl border border-gold-100/50">
-                <div class="space-y-6 text-left">
-                    <h2 class="text-3xl font-bold leading-tight">Audit Result: <span class="text-error font-black italic">${report.Auditscore}/100</span></h2>
-                    <p class="text-gray-600 leading-relaxed italic">
-                        "Luxury clients expect instant service. At ${loadTimeSec}, your website is making them wait. Every second beyond 2.0s results in a significant loss of trust and conversion."
-                    </p>
-                    <div class="flex flex-wrap gap-3">
-                        ${badges}
+          <!-- ═══ HERO — Title + Score Card ═══ -->
+          <tr>
+            <td style="background-color:#ffffff;padding:48px 40px 32px 40px">
+
+              <!-- Title -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tbody><tr>
+                  <td align="center" style="padding-bottom:40px">
+                    <h1 style="font-family:'Times New Roman',Times,serif;font-size:36px;line-height:1.2;color:#0d0d0d;text-transform:uppercase;letter-spacing:-1px;margin:0 0 16px 0">Your Brand's Prestige is Leaking.</h1>
+                    <p style="color:#9ca3af;font-size:10px;font-weight:bold;text-transform:uppercase;letter-spacing:3px;margin:0">Performance Analysis prepared for: <span style="color:#b08d3d">${businessName}</span></p>
+                  </td>
+                </tr></tbody>
+              </table>
+
+              <!-- Score Card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border:1px solid #f9f4e6;border-radius:24px;margin-bottom:40px">
+                <tbody><tr>
+                  <td width="65%" style="padding:40px;vertical-align:middle">
+                    <h2 style="font-size:28px;font-weight:bold;margin:0 0 20px 0">Audit Score: <span style="color:#e53e3e;font-weight:900">${score}/100</span></h2>
+                    <p style="color:#4b5563;line-height:1.6;font-style:italic;margin:0 0 24px 0">"Your current website performance is being analysed. For HNWIs, speed is the ultimate form of luxury. Delays cost you high-ticket clients."</p>
+                    <div>${badges}</div>
+                  </td>
+                  <td width="35%" align="center" style="padding:40px;vertical-align:middle">
+                    <div style="width:160px;height:160px;border-radius:50%;border:12px solid #f9fafb;display:inline-block;text-align:center">
+                      <table width="100%" height="100%" cellpadding="0" cellspacing="0">
+                        <tbody><tr>
+                          <td align="center" style="vertical-align:middle">
+                            <span style="display:block;font-size:52px;font-weight:900;color:#c9a84c;line-height:1">${score}</span>
+                            <span style="display:block;font-size:10px;color:#9ca3af;font-weight:bold;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Performance</span>
+                          </td>
+                        </tr></tbody>
+                      </table>
                     </div>
-                </div>
-                <div class="relative flex items-center justify-center">
-                    <div class="w-48 h-48 rounded-full border-[12px] border-gray-50 flex items-center justify-center relative">
-                        <div class="absolute inset-0 rounded-full border-[12px] border-gold-500" style="clip-path: inset(0 0 40% 0);"></div>
-                        <div class="text-center">
-                            <span class="text-6xl font-black text-gold-500">${report.Auditscore}</span>
-                            <span class="block text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Health</span>
-                        </div>
+                  </td>
+                </tr></tbody>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ═══ SPEED COMPARISON ═══ -->
+          <tr>
+            <td style="background-color:#ffffff;padding:0 40px 40px 40px">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tbody>
+                  <tr>
+                    <td align="center" style="padding-bottom:32px">
+                      <h3 style="font-family:'Times New Roman',Times,serif;font-size:28px;margin:0 0 12px 0;color:#0d0d0d">Visualizing the Friction</h3>
+                      <p style="color:#6b7280;font-size:14px;margin:0">Your current site's loading experience vs. our optimized 5-day standard.</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <!-- Current -->
+                    <td width="48%" style="background-color:#fff;padding:32px;border-radius:20px;border:1px solid #f3f4f6;vertical-align:top">
+                      <table width="100%" cellpadding="0" cellspacing="0">
+                        <tbody>
+                          <tr>
+                            <td align="left"><span style="font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:2px;color:#e53e3e">Current (${businessName})</span></td>
+                            <td align="right"><span style="font-size:22px;font-weight:900;color:#e5e7eb">${loadTimeSec}</span></td>
+                          </tr>
+                          <tr><td colspan="2" style="padding:16px 0">
+                            <table width="100%" cellpadding="0" cellspacing="0">
+                              <tbody><tr>
+                                <td style="background-color:#f9fafb;height:8px;border-radius:8px">
+                                  <div style="background-color:#e53e3e;width:${speedBarWidth};height:8px;border-radius:8px"></div>
+                                </td>
+                              </tr></tbody>
+                            </table>
+                          </td></tr>
+                          <tr>
+                            <td colspan="2"><p style="font-size:11px;color:#9ca3af;line-height:1.6;font-style:italic;margin:0">"62% of users leave if a page takes more than 3 seconds to load. You may be losing more than half of your traffic."</p></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                    <td width="4%"></td>
+                    <!-- Optimized -->
+                    <td width="48%" style="background-color:#fff;padding:32px;border-radius:20px;border:2px solid #c9a84c;vertical-align:top">
+                      <table width="100%" cellpadding="0" cellspacing="0">
+                        <tbody>
+                          <tr>
+                            <td align="left"><span style="font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:2px;color:#2f855a">Optimized (Target)</span></td>
+                            <td align="right"><span style="font-size:22px;font-weight:900;color:#c9a84c">1.20s</span></td>
+                          </tr>
+                          <tr><td colspan="2" style="padding:16px 0">
+                            <table width="100%" cellpadding="0" cellspacing="0">
+                              <tbody><tr>
+                                <td style="background-color:#f9fafb;height:8px;border-radius:8px">
+                                  <div style="background-color:#2f855a;width:100%;height:8px;border-radius:8px"></div>
+                                </td>
+                              </tr></tbody>
+                            </table>
+                          </td></tr>
+                          <tr>
+                            <td colspan="2"><p style="font-size:11px;color:#6b7280;line-height:1.6;font-weight:bold;font-style:italic;margin:0">"Seamless. Instant. High-converting. This is where your marketing budget actually pays off."</p></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ═══ COST OF INACTION (dark, interactive) ═══ -->
+          <tr>
+            <td style="padding:0 40px 40px 40px;background-color:#ffffff">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d0d0d;border-radius:32px">
+                <tbody><tr>
+                  <!-- Left: slider -->
+                  <td width="55%" style="padding:48px 32px 48px 48px;vertical-align:middle">
+                    <h3 style="font-family:'Times New Roman',Times,serif;font-size:28px;color:#c9a84c;margin:0 0 20px 0">The Cost of Inaction</h3>
+                    <p style="color:#9ca3af;font-size:14px;line-height:1.6;margin:0 0 28px 0">Industry data proves that every 1s of delay reduces conversions by <strong style="color:#ffffff">7%</strong>. For a high-ticket business like yours, the numbers are staggering.</p>
+
+                    <span style="display:block;font-size:10px;font-weight:bold;text-transform:uppercase;letter-spacing:2px;color:#c9a84c;margin-bottom:14px">Estimated Monthly Revenue ($)</span>
+
+                    <!-- Slider -->
+                    <input
+                      id="ss-rev-slider"
+                      type="range"
+                      min="10000" max="500000" step="5000" value="75000"
+                      style="width:100%;-webkit-appearance:none;appearance:none;height:4px;border-radius:4px;background:linear-gradient(to right,#c9a84c 15%,#1f2937 15%);outline:none;cursor:pointer;margin-bottom:20px"
+                      oninput="
+                        var v = parseInt(this.value);
+                        var pct = Math.round(((v - 10000) / (500000 - 10000)) * 100);
+                        this.style.background = 'linear-gradient(to right,#c9a84c ' + pct + '%,#1f2937 ' + pct + '%)';
+                        document.getElementById('ss-rev-val').textContent = v.toLocaleString('en-US') + ' $';
+                        var delay = ${delaySec.toFixed(4)};
+                        var annLoss = Math.round(v * delay * 0.07 * 12);
+                        document.getElementById('ss-ann-loss').textContent = '$ ' + annLoss.toLocaleString('en-US');
+                      "
+                    >
+                    <style>
+                      #ss-rev-slider::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#c9a84c;cursor:pointer;box-shadow:0 0 0 3px rgba(201,168,76,0.25)}
+                      #ss-rev-slider::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#c9a84c;cursor:pointer;border:none}
+                    </style>
+
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tbody><tr>
+                        <td align="left"><span id="ss-rev-val" style="font-size:28px;font-weight:900;color:#ffffff">75,000 $</span></td>
+                        <td align="right"><span style="color:#e53e3e;font-size:13px;font-weight:bold">${lossPct}</span></td>
+                      </tr></tbody>
+                    </table>
+                  </td>
+
+                  <!-- Right: live loss display -->
+                  <td width="45%" align="center" style="padding:48px 48px 48px 0;vertical-align:middle">
+                    <div style="background-color:rgba(255,255,255,0.05);padding:40px;border-radius:24px;border:1px solid rgba(255,255,255,0.1);text-align:center">
+                      <span style="display:block;font-size:10px;font-weight:bold;text-transform:uppercase;letter-spacing:2px;color:#6b7280;margin-bottom:16px">Estimated Annual Revenue Loss</span>
+                      <div id="ss-ann-loss" style="font-size:40px;font-weight:900;color:#c9a84c;letter-spacing:-2px;margin-bottom:20px">${annualLoss}</div>
+                      <span style="display:inline-block;padding:8px 16px;background-color:rgba(201,168,76,0.1);color:#c9a84c;border-radius:4px;font-size:9px;font-weight:bold;text-transform:uppercase;letter-spacing:3px">Verified via Technical Audit Data</span>
                     </div>
-                </div>
-            </div>
-        </section>
+                  </td>
+                </tr></tbody>
+              </table>
+            </td>
+          </tr>
 
-        <!-- SECTION: Social Proof -->
-        <section class="text-center">
-            <p class="text-[10px] uppercase tracking-[0.5em] font-bold text-gray-400 mb-8">Audited via Elite Industry Platforms</p>
-            <div class="flex flex-wrap justify-center gap-12 opacity-30 hover:opacity-100 transition-opacity">
-                <div class="font-bold text-xs tracking-tighter">GOOGLE LIGHTHOUSE</div>
-                <div class="font-bold text-xs tracking-tighter">GTMETRIX GLOBAL</div>
-                <div class="font-bold text-xs tracking-tighter">CORE WEB VITALS</div>
-                <div class="font-bold text-xs tracking-tighter">CLOUDFLARE EDGE</div>
-            </div>
-        </section>
-
-        <!-- SECTION: Speed Experience -->
-        <section class="space-y-12">
-            <div class="text-center space-y-4">
-                <h3 class="font-heading text-3xl italic">The User Experience Friction</h3>
-                <p class="text-gray-500">A visual comparison of your current user's wait time vs. an optimized journey.</p>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div class="bg-white p-10 rounded-[32px] border border-gray-100 shadow-sm">
-                    <div class="flex justify-between items-center mb-6">
-                        <span class="text-xs font-bold uppercase tracking-widest text-error tracking-tighter">Current Load Time</span>
-                        <span class="text-2xl font-black text-gray-200">${loadTimeSec}</span>
+          <!-- ═══ RADAR + ROADMAP ═══ -->
+          <tr>
+            <td style="background-color:#ffffff;padding:0 40px 40px 40px">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tbody><tr>
+                  <!-- Chart -->
+                  <td width="50%" style="padding-right:24px;vertical-align:middle">
+                    <div style="background-color:#ffffff;padding:24px;border-radius:24px;border:1px solid #f3f4f6;text-align:center">
+                      <img src="${chartUrl}" alt="Technical Radar" style="max-width:100%;height:auto;border-radius:12px">
                     </div>
-                    <div class="w-full h-2 bg-gray-50 rounded-full overflow-hidden">
-                        <div class="bar-slow h-full bg-error rounded-full"></div>
-                    </div>
-                    <p class="mt-6 text-[11px] text-gray-400 italic">"Luxury buyers are impatient. 4s feels like an eternity."</p>
-                </div>
+                  </td>
+                  <!-- Roadmap -->
+                  <td width="50%" style="padding-left:24px;vertical-align:middle">
+                    <h2 style="font-family:'Times New Roman',Times,serif;font-size:28px;font-style:italic;margin:0 0 32px 0">Elite Fix Roadmap</h2>
+                    <!-- Step 01 -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+                      <tbody><tr>
+                        <td width="45" style="vertical-align:top"><span style="color:#c9a84c;font-size:24px;font-weight:bold">01</span></td>
+                        <td>
+                          <h4 style="font-size:15px;font-weight:bold;color:#0d0d0d;margin:0 0 6px 0">Core Web Vitals Surgery</h4>
+                          <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0">Cleaning bloatware and render-blocking scripts that choke your site's above-the-fold content.</p>
+                        </td>
+                      </tr></tbody>
+                    </table>
+                    <!-- Step 02 -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+                      <tbody><tr>
+                        <td width="45" style="vertical-align:top"><span style="color:#c9a84c;font-size:24px;font-weight:bold">02</span></td>
+                        <td>
+                          <h4 style="font-size:15px;font-weight:bold;color:#0d0d0d;margin:0 0 6px 0">Asset Modernization</h4>
+                          <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0">Implementing next-gen image formats and global edge caching to ensure 1.2s loading worldwide.</p>
+                        </td>
+                      </tr></tbody>
+                    </table>
+                    <!-- Step 03 -->
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tbody><tr>
+                        <td width="45" style="vertical-align:top"><span style="color:#c9a84c;font-size:24px;font-weight:bold">03</span></td>
+                        <td>
+                          <h4 style="font-size:15px;font-weight:bold;color:#0d0d0d;margin:0 0 6px 0">Conversion Preservation</h4>
+                          <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0">Fixing hidden JS console errors that silently break your booking forms on mobile devices.</p>
+                        </td>
+                      </tr></tbody>
+                    </table>
+                  </td>
+                </tr></tbody>
+              </table>
+            </td>
+          </tr>
 
-                <div class="bg-white p-10 rounded-[32px] border-2 border-gold-500 shadow-xl relative">
-                    <div class="absolute -top-3 right-8 bg-gold-500 text-onyx text-[9px] font-black px-4 py-1 rounded-full uppercase tracking-widest">Stepping Stones Target</div>
-                    <div class="flex justify-between items-center mb-6">
-                        <span class="text-xs font-bold uppercase tracking-widest text-success">Optimized</span>
-                        <span class="text-2xl font-black text-gold-500">1.20s</span>
-                    </div>
-                    <div class="w-full h-2 bg-gray-50 rounded-full overflow-hidden">
-                        <div class="bar-fast h-full bg-success rounded-full"></div>
-                    </div>
-                    <p class="mt-6 text-[11px] text-gray-500 font-semibold italic">"Instant gratification. This drives 2x higher conversions."</p>
-                </div>
-            </div>
-        </section>
+          <!-- ═══ GUARANTEE + CTA ═══ -->
+          <tr>
+            <td style="background-color:#ffffff;padding:0 40px 48px 40px">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border:2px solid #c9a84c;border-radius:40px;padding:48px;text-align:center">
+                <tbody>
+                  <tr>
+                    <td align="center">
+                      <!-- Badge -->
+                      <div style="background-color:#0d0d0d;border:4px solid #c9a84c;width:96px;height:96px;border-radius:50%;margin:0 auto 28px auto;display:block">
+                        <table width="100%" height="100%" cellpadding="0" cellspacing="0">
+                          <tbody><tr>
+                            <td align="center" style="vertical-align:middle">
+                              <span style="font-size:28px;font-weight:900;color:#c9a84c">90+</span>
+                            </td>
+                          </tr></tbody>
+                        </table>
+                      </div>
+                      <h2 style="font-family:'Times New Roman',Times,serif;font-size:34px;margin:0 0 20px 0;color:#0d0d0d;line-height:1.2">The Performance Guarantee</h2>
+                      <p style="font-size:17px;color:#4b5563;line-height:1.7;margin:0 auto 28px auto;max-width:580px">
+                        We legally guarantee to boost your Google PageSpeed score to <strong style="color:#0d0d0d">90/100 or above</strong> within 5 business days.<br><br>
+                        <span style="color:#e53e3e;font-weight:bold;text-transform:uppercase;font-style:italic;letter-spacing:1px;text-decoration:underline">Zero Risk:</span> If we do not hit our performance benchmarks, you pay absolutely nothing. $0. No retainer, no fees, no excuses.
+                      </p>
+                      <!-- CTA Button -->
+                      <div style="margin-top:32px">
+                        <a href="mailto:steppingstonesdev.contact@gmail.com?subject=${callSubject}"
+                           style="display:inline-block;background-color:#0d0d0d;color:#ffffff;padding:22px 48px;border-radius:50px;font-size:16px;font-weight:900;letter-spacing:-0.5px;text-decoration:none;text-transform:uppercase">
+                          Book Your Strategy Call (15 Min)
+                        </a>
+                        <p style="font-size:9px;color:#9ca3af;font-weight:bold;text-transform:uppercase;letter-spacing:4px;margin-top:28px">Only 2 Audit Slots Remaining for March</p>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+          </tr>
 
-        <!-- SECTION: Impact Calculator -->
-        <section id="impact" class="bg-onyx text-white rounded-[48px] p-12 relative overflow-hidden">
-            <div class="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-                <div class="space-y-8">
-                    <h3 class="font-heading text-3xl text-gold-500">The Cost of Inaction</h3>
-                    <p class="text-gray-400 italic">"Slow websites cost the economy billions. For your scale, here is the estimated revenue leak caused by your current tech stack."</p>
-                    
-                    <div class="space-y-8">
-                        <div>
-                            <label class="block text-[10px] font-bold uppercase tracking-[0.2em] text-gold-500 mb-6">Monthly Revenue Est. ($)</label>
-                            <input type="range" id="revRange" min="10000" max="500000" step="5000" value="75000" class="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer">
-                        </div>
-                        <div class="flex justify-between items-center pt-4 border-t border-white/5">
-                            <span id="revVal" class="text-3xl font-black">75,000 $</span>
-                            <span class="text-error font-bold text-xl">${lossPercent}</span>
-                        </div>
-                    </div>
-                </div>
+          <!-- ═══ FOOTER ═══ -->
+          <tr>
+            <td style="background-color:#0d0d0d;padding:40px 48px;border-radius:0 0 16px 16px;border-top:1px solid rgba(255,255,255,0.05)">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tbody><tr>
+                  <td width="50%" align="left" style="padding-bottom:8px">
+                    <div style="color:#c9a84c;font-family:'Times New Roman',Times,serif;font-size:22px;letter-spacing:-1px;margin-bottom:6px">Stepping Stones</div>
+                    <p style="color:#6b7280;font-size:10px;font-weight:bold;text-transform:uppercase;letter-spacing:5px;margin:0">Performance · Conversion · Excellence</p>
+                  </td>
+                  <td width="50%" align="right" style="padding-bottom:8px">
+                    <p style="color:#4b5563;font-size:10px;font-weight:bold;text-transform:uppercase;letter-spacing:3px;font-style:italic;text-decoration:underline;text-decoration-color:rgba(201,168,76,0.5);margin:0 0 6px 0">Elite Digital Audit Division</p>
+                    <p style="color:#374151;font-size:10px;margin:0">© ${year} Stepping Stones Agency. Miami · Dubai · London.</p>
+                  </td>
+                </tr></tbody>
+              </table>
+            </td>
+          </tr>
 
-                <div class="bg-white/5 p-12 rounded-[40px] border border-white/10 text-center space-y-4">
-                    <span class="text-[10px] font-bold uppercase tracking-[0.4em] text-gray-500">Annual Revenue Loss Estimate</span>
-                    <div id="totalLoss" class="text-5xl md:text-7xl font-black text-gold-500 tracking-tighter">${financialLoss}</div>
-                    <div class="pt-8 text-[9px] text-gray-500 uppercase tracking-widest">Calculated per 1s delay industry benchmark</div>
-                </div>
-            </div>
-        </section>
+        </tbody>
+      </table>
 
-        <!-- SECTION: Radar Analysis -->
-        <section class="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-            <div class="chart-container bg-white p-8 rounded-[32px] shadow-lg">
-                <img src="${chartUrl}" alt="Technical Radar Chart" style="max-width: 100%; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-            </div>
-            <div class="space-y-8">
-                <h2 class="font-heading text-3xl">Technical Roadmap</h2>
-                <div class="space-y-6">
-                    <div class="flex gap-8">
-                        <div class="text-gold-500 text-3xl font-heading">01</div>
-                        <div>
-                            <h4 class="font-bold text-onyx uppercase text-sm">Vital Surgery</h4>
-                            <p class="text-sm text-gray-500 mt-2">Clearing render-blocking JS that chokes your Largest Contentful Paint (LCP).</p>
-                        </div>
-                    </div>
-                    <div class="flex gap-8">
-                        <div class="text-gold-500 text-3xl font-heading">02</div>
-                        <div>
-                            <h4 class="font-bold text-onyx uppercase text-sm">Asset Purge</h4>
-                            <p class="text-sm text-gray-500 mt-2">Compressing massive media assets with Next-Gen formats to save 70% in bandwidth.</p>
-                        </div>
-                    </div>
-                    <div class="flex gap-8">
-                        <div class="text-gold-500 text-3xl font-heading">03</div>
-                        <div>
-                            <h4 class="font-bold text-onyx uppercase text-sm">Error Cleanse</h4>
-                            <p class="text-sm text-gray-500 mt-2">Fixing the 6 hidden console errors that break mobile booking flows.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
+    </td></tr></tbody>
+  </table>
 
-        <!-- SECTION: The Elite Guarantee -->
-        <section id="guarantee" class="bg-white rounded-[56px] border-2 border-gold-500 p-12 text-center space-y-10 relative shadow-2xl">
-            <div class="max-w-3xl mx-auto space-y-6">
-                <div class="w-24 h-24 rounded-full bg-onyx mx-auto flex items-center justify-center border-4 border-gold-500 shadow-xl">
-                    <span class="text-gold-500 text-4xl font-black">90+</span>
-                </div>
-                <h2 class="font-heading text-4xl">The 90+ Score Guarantee</h2>
-                <p class="text-gray-600 text-lg leading-relaxed font-light">
-                    We legally guarantee to boost your Google PageSpeed score to <span class="text-onyx font-bold">90/100 or above</span> within 5 business days.
-                </p>
-                <div class="p-8 bg-gold-50 border border-gold-200 rounded-3xl italic">
-                    "If we do not hit our benchmarks, you pay nothing. $0. The risk is 100% on us."
-                </div>
-            </div>
-
-            <div class="pt-8">
-                <a href="mailto:steppingstonesdev.contact@gmail.com?subject=Connect Audit - Risk Free Booking" class="inline-block bg-onyx text-white px-16 py-7 rounded-full font-black text-xl hover:bg-gold-600 transition-all hover:scale-105 active:scale-95 shadow-2xl pulse">
-                    CLAIM YOUR 90+ GUARANTEE
-                </a>
-                <p class="text-[9px] text-gray-400 mt-10 uppercase tracking-[0.5em] font-bold">Only 2 Audit Slots Remaining for March Cycle</p>
-            </div>
-        </section>
-
-    </main>
-
-    <footer class="bg-onyx text-white py-20 px-8 border-t border-white/5">
-        <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-            <div class="space-y-6 flex flex-col items-center md:items-start">
-                <div class="ss-logo scale-150 border-gold-500/50">
-                    <div class="ss-inner-blocks">
-                        <div class="ss-block"></div>
-                        <div class="ss-block" style="margin-left: 6px;"></div>
-                        <div class="ss-block" style="margin-left: 12px;"></div>
-                        <div class="ss-block" style="margin-left: 18px;"></div>
-                    </div>
-                </div>
-                <div>
-                    <div class="text-gold-500 font-heading text-2xl tracking-tighter">Stepping Stones</div>
-                    <p class="text-gray-500 text-[10px] uppercase tracking-[0.6em] mt-2 font-bold tracking-widest">Digital Architecture</p>
-                </div>
-            </div>
-            <div class="text-center md:text-right space-y-3">
-                <p class="text-gold-500/60 text-[11px] font-bold uppercase tracking-widest italic underline decoration-gold-500/50">Performance Division</p>
-                <p class="text-gray-600 text-[10px]">© \${new Date().getFullYear()} Stepping Stones Agency. Miami · Dubai · London.</p>
-            </div>
-        </div>
-    </footer>
 </body>
 </html>`;
 }
 
-module.exports = {
-  generateSubject,
-  buildHtmlEmail
-};
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
+module.exports = { generateSubject, buildHtmlEmail };
