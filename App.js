@@ -108,6 +108,10 @@ function buildCsvWriter(append) {
       { id: 'HasDescription',  title: 'HasDescription'  },
       { id: 'Consoleerrors',   title: 'Consoleerrors'   },
       { id: 'Pagescrawled',    title: 'Pagescrawled'    },
+      // UX Metrics
+      { id: 'UxCLS',           title: 'UxCLS'           },
+      { id: 'UxContrast',      title: 'UxContrast'      },
+      { id: 'UxTapTargets',    title: 'UxTapTargets'    },
       { id: 'Auditscore',      title: 'Auditscore'      },
       { id: 'Auditstatus',     title: 'Auditstatus'     },
       { id: 'EmailSent',       title: 'EmailSent'       },
@@ -199,15 +203,21 @@ async function run() {
     let emailError = '';
 
     if (cleanedEmail && auditReport.Auditstatus !== 'Pending') {
-      const mailResult = await sendAuditEmail({
-        to:           cleanedEmail,
-        businessName,
-        website,
-        auditReport,
-      });
-      emailSent  = mailResult.success;
-      emailError = mailResult.error || '';
-      if (emailSent) emailed++;
+      // Skip sending email if the audit score is 90 or above
+      if (auditReport.Auditscore >= 90) {
+        console.warn(`  ⚠️   Audit score is ${auditReport.Auditscore}/100. Skipping email to maintain high relevance.`);
+        emailError = 'Skipped - Score >= 90';
+      } else {
+        const mailResult = await sendAuditEmail({
+          to:           cleanedEmail,
+          businessName,
+          website,
+          auditReport,
+        });
+        emailSent  = mailResult.success;
+        emailError = mailResult.error || '';
+        if (emailSent) emailed++;
+      }
     }
 
     // --- 4. Write to Auditresults.csv ---
@@ -225,6 +235,9 @@ async function run() {
       HasDescription:  String(auditReport.Seometrics?.hasDescription),
       Consoleerrors:   String(auditReport.Consoleerrors),
       Pagescrawled:    String(auditReport.Pagescrawled || 0),
+      UxCLS:           String(auditReport.UxMetrics?.cls?.toFixed(3) || '0'),
+      UxContrast:      String(auditReport.UxMetrics?.contrastIssues || false),
+      UxTapTargets:    String(auditReport.UxMetrics?.tapTargetsIssues || false),
       Auditscore:      String(auditReport.Auditscore),
       Auditstatus:     auditReport.Auditstatus,
       EmailSent:       String(emailSent),
@@ -232,8 +245,14 @@ async function run() {
     }]);
 
     // --- 5. Mark processed ---
-    markProcessed(processedKey);
-    processed.add(processedKey);
+    // Only mark as processed if we successfully emailed them, OR if they are fundamentally un-emailable
+    // (no website, no email, or score >= 90). This ensures timeouts and temporary errors are retried.
+    if (emailSent || !website || !cleanedEmail || auditReport.Auditscore >= 90) {
+      markProcessed(processedKey);
+      processed.add(processedKey);
+    } else {
+      console.log(`  ♻️   Audit failed or email not sent. Lead remains unprocessed for future retry.`);
+    }
 
     // --- 6. Random delay only if there's a next lead ---
     if (i < leads.length - 1) {

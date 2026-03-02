@@ -22,6 +22,7 @@
 'use strict';
 
 const { chromium } = require('playwright');
+const { playAudit } = require('playwright-lighthouse');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -115,7 +116,16 @@ function computeAuditScore(report) {
   if (ce === 0)  score += 15;
   else if (ce <= 3) score += 7;
 
-  return score;
+  // Apply UX Penalties from Lighthouse
+  const ux = report.UxMetrics;
+  if (ux) {
+    if (ux.cls > 0.1) score -= 10;  // Severe layout shift penalty
+    if (ux.contrastIssues) score -= 5;
+    if (ux.tapTargetsIssues) score -= 5;
+  }
+
+  // Ensure score stays bounded
+  return Math.max(0, Math.min(100, score));
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +190,7 @@ async function auditWebsite(url, { timeoutMs = 40_000, maxPages } = {}) {
     Seometrics:    { hasTitle: false, hasDescription: false },
     Consoleerrors: 0,
     Pagescrawled:  0,
+    UxMetrics:     { cls: 0, contrastIssues: false, tapTargetsIssues: false },
     Auditstatus:   'Pending',
     Auditscore:    0,
   };
@@ -193,9 +204,11 @@ async function auditWebsite(url, { timeoutMs = 40_000, maxPages } = {}) {
 
   let browser;
   try {
+    const port = 9222; // Required for Lighthouse connection
     browser = await chromium.launch({
       headless: process.env.HEADLESS !== 'false',
       args: [
+        `--remote-debugging-port=${port}`,
         '--disable-blink-features=AutomationControlled',
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -226,6 +239,29 @@ async function auditWebsite(url, { timeoutMs = 40_000, maxPages } = {}) {
     await page.goto(url, { waitUntil: 'load', timeout: timeoutMs });
 
     const homeMetrics = await auditPage(page, timeoutMs);
+
+    // Lighthouse Audit on Homepage UX Metrics
+    console.log(`  🛟  Running Lighthouse UX Audit on homepage…`);
+    try {
+      const lhAudit = await playAudit({
+        page: page,
+        port: 9222,
+        config: { extends: 'lighthouse:default' },
+        thresholds: { performance: 0, accessibility: 0, seo: 0 }, // We don't fail the build, just collect
+        reports: {
+          formats: { json: false, html: false }, // we explicitly read raw results
+          name: 'audit-report'
+        }
+      });
+      
+      const audits = lhAudit.lhr.audits;
+      report.UxMetrics.cls = audits['cumulative-layout-shift']?.numericValue || 0;
+      report.UxMetrics.contrastIssues = audits['color-contrast']?.score === 0;
+      report.UxMetrics.tapTargetsIssues = audits['tap-targets']?.score === 0;
+      
+    } catch (lhErr) {
+      console.warn(`  ⚠️   Lighthouse audit failed: ${lhErr.message}`);
+    }
 
     // Grab origin for same-origin filtering
     const origin = new URL(url).origin;
