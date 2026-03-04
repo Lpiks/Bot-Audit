@@ -36,6 +36,7 @@ const DATA_DIR          = path.join(__dirname, 'Data');
 const LEADLIST_PATH     = path.join(DATA_DIR, 'Leadlist.csv');
 const AUDITRESULTS_PATH = path.join(DATA_DIR, 'Auditresults.csv');
 const PROCESSED_LOG     = path.join(__dirname, 'Processed.log');
+const DAILY_LIMIT       = parseInt(process.env.DAILY_LIMIT || '30', 10);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -158,6 +159,11 @@ async function run() {
     console.log(`─────────────────────────────────────────────────────`);
     console.log(`[${i + 1}/${leads.length}]  ${businessName}`);
     console.log(`  🌐  ${website}`);
+
+    if (emailed >= DAILY_LIMIT) {
+      console.log(`  🛑   Daily limit of ${DAILY_LIMIT} emails reached to protect deliverability. Stopping.`);
+      break;
+    }
 
     // Skip if already processed
     if (processed.has(processedKey)) {

@@ -88,11 +88,7 @@ async function sendAuditEmail({ to, businessName, website, auditReport }) {
 
   const subject  = generateSubject(businessName, auditReport);
 
-  // Check if logo exists in Data folder for attachment
-  const logoPath = path.join(__dirname, '..', 'Data', 'logo.png');
-  const hasLogo  = fs.existsSync(logoPath);
-
-  const htmlBody = buildHtmlEmail({ businessName, website, report: auditReport, senderName, hasLogo });
+  const htmlBody = buildHtmlEmail({ businessName, website, report: auditReport, senderName });
 
   // Use a builder transport to capture the raw RFC-2822 message for IMAP
   const transporter = createTransporter();
@@ -103,16 +99,6 @@ async function sendAuditEmail({ to, businessName, website, auditReport }) {
     subject,
     html:    htmlBody,
   };
-
-  if (hasLogo) {
-    mailOptions.attachments = [
-      {
-        filename: 'logo.png',
-        path:     logoPath,
-        cid:      'agencyLogo',
-      },
-    ];
-  }
 
   try {
     // Send via SMTP and capture raw message bytes for IMAP append
